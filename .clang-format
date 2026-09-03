@@ -1,0 +1,40 @@
+Language: Cpp
+BasedOnStyle: Microsoft
+
+BreakBeforeBraces: Allman
+
+IndentWidth: 4
+ContinuationIndentWidth: 4
+IndentAccessModifiers: true
+
+QualifierAlignment: Right
+DerivePointerAlignment: false
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+ColumnLimit: 100
+
+AllowShortFunctionsOnASingleLine: None
+AllowShortBlocksOnASingleLine: Never
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: None
+
+LambdaBodyIndentation: Signature
+
+BinPackArguments: false
+AllowAllArgumentsOnNextLine: false
+
+# Braced initializer
+Cpp11BracedListStyle: FunctionCall
+BreakAfterOpenBracketBracedList: true
+BreakBeforeCloseBracketBracedList: true
+BracedInitializerIndentWidth: 4
+BinPackLongBracedList: false
+
+# Align .field = ...
+AlignConsecutiveAssignments:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+  AlignCompound: false
+  PadOperators: true
