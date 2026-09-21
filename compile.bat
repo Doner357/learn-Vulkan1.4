@@ -1,1 +1,0 @@
-slangc ./src/gplab/shaders/shader.slang -target spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -entry vertMain -entry fragMain -o slang.spv

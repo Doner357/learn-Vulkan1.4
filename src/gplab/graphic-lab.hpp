@@ -72,6 +72,10 @@ class GraphicLab
         // Command Buffer
         vk::raii::CommandPool command_pool     = nullptr;
         vk::raii::CommandBuffer command_buffer = nullptr;
+        // Synchronization
+        vk::raii::Semaphore present_complete_semaphore = nullptr;
+        vk::raii::Semaphore render_finished_semaphore  = nullptr;
+        vk::raii::Fence draw_fence                     = nullptr;
 
         GraphicLab() = default;
 
@@ -87,6 +91,7 @@ class GraphicLab
         void createGraphicsPipeline();
         void createCommandPool();
         void createCommandBuffer();
+        void createSyncObjects();
         void reacordCommandBuffer(std::uint32_t image_index);
         void mainLoop();
         void drawFrame();

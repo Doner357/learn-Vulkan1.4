@@ -92,6 +92,7 @@ bool isDeviceSuitable(vk::raii::PhysicalDevice const& physical_device,
         static_cast<bool>(
             features.get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters) &&
         static_cast<bool>(features.get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering) &&
+        static_cast<bool>(features.get<vk::PhysicalDeviceVulkan13Features>().synchronization2) &&
         static_cast<bool>(
             features.get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState);
 
@@ -269,6 +270,7 @@ void GraphicLab::initVulkan()
     createGraphicsPipeline();
     createCommandPool();
     createCommandBuffer();
+    createSyncObjects();
 }
 
 void GraphicLab::createInstance()
@@ -461,6 +463,7 @@ void GraphicLab::createLogicalDevice()
                 .shaderDrawParameters = vk::True, // PhysicalDeviceFeatures2 (empty for now)
             },
             {
+                .synchronization2 = vk::True, // Enbale using ImageBarrier2
                 .dynamicRendering = vk::True, // PhysicalDeviceVulkan11Features: Enable shader draw
                                               // parameters from Vulkan 1.1
             },
@@ -633,19 +636,23 @@ void GraphicLab::createGraphicsPipeline()
     // Pipeline Rendering Create Info
     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo>
         pipeline_create_info_chain = {
-            {.stageCount          = 2,
-             .pStages             = shader_stages.data(),
-             .pVertexInputState   = &vertex_input_info,
-             .pInputAssemblyState = &input_assembly,
-             .pViewportState      = &viewport_state,
-             .pRasterizationState = &rasterizer,
-             .pMultisampleState   = &multisampling,
-             .pColorBlendState    = &color_blending,
-             .pDynamicState       = &dynamic_state,
-             .layout              = pipeline_layout,
-             .renderPass          = nullptr,},
-            {.colorAttachmentCount    = 1,
-             .pColorAttachmentFormats = &swapchain_surface_format.format,},
+            {
+                .stageCount          = 2,
+                .pStages             = shader_stages.data(),
+                .pVertexInputState   = &vertex_input_info,
+                .pInputAssemblyState = &input_assembly,
+                .pViewportState      = &viewport_state,
+                .pRasterizationState = &rasterizer,
+                .pMultisampleState   = &multisampling,
+                .pColorBlendState    = &color_blending,
+                .pDynamicState       = &dynamic_state,
+                .layout              = pipeline_layout,
+                .renderPass          = nullptr,
+            },
+            {
+                .colorAttachmentCount    = 1,
+                .pColorAttachmentFormats = &swapchain_surface_format.format,
+            },
         };
 
     graphics_pipeline = device.createGraphicsPipeline(
@@ -672,6 +679,13 @@ void GraphicLab::createCommandBuffer()
     };
 
     command_buffer = std::move(device.allocateCommandBuffers(alloc_info).front());
+}
+
+void GraphicLab::createSyncObjects()
+{
+    present_complete_semaphore = device.createSemaphore({});
+    render_finished_semaphore  = device.createSemaphore({});
+    draw_fence                 = device.createFence({.flags = vk::FenceCreateFlagBits::eSignaled});
 }
 
 void GraphicLab::reacordCommandBuffer(std::uint32_t image_index)
@@ -745,6 +759,47 @@ void GraphicLab::mainLoop()
 
 void GraphicLab::drawFrame()
 {
+    auto fence_result =
+        device.waitForFences(*draw_fence, vk::True, std::numeric_limits<std::uint64_t>::max());
+
+    if (fence_result != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("failed to wait for fence!");
+    }
+    device.resetFences(*draw_fence);
+
+    auto [result, image_index] =
+        swapchain.acquireNextImage(std::numeric_limits<std::uint64_t>::max(),
+                                   *present_complete_semaphore,
+                                   nullptr);
+
+    reacordCommandBuffer(image_index);
+
+    vk::PipelineStageFlags wait_destination_stage_mask(
+        vk::PipelineStageFlagBits::eColorAttachmentOutput);
+    vk::SubmitInfo const submit_info{
+        .waitSemaphoreCount   = 1,
+        .pWaitSemaphores      = &*present_complete_semaphore,
+        .pWaitDstStageMask    = &wait_destination_stage_mask,
+        .commandBufferCount   = 1,
+        .pCommandBuffers      = &*command_buffer,
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores    = &*render_finished_semaphore,
+    };
+
+    queue.submit(submit_info, *draw_fence);
+
+    vk::PresentInfoKHR const present_info_khr{
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores    = &*render_finished_semaphore,
+        .swapchainCount     = 1,
+        .pSwapchains        = &*swapchain,
+        .pImageIndices      = &image_index,
+    };
+
+    result = queue.presentKHR(present_info_khr);
+
+    device.waitIdle();
 }
 
 void GraphicLab::run()
