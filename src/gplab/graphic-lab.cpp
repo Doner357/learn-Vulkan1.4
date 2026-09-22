@@ -775,19 +775,25 @@ void GraphicLab::drawFrame()
 
     reacordCommandBuffer(image_index);
 
-    vk::PipelineStageFlags wait_destination_stage_mask(
-        vk::PipelineStageFlagBits::eColorAttachmentOutput);
-    vk::SubmitInfo const submit_info{
-        .waitSemaphoreCount   = 1,
-        .pWaitSemaphores      = &*present_complete_semaphore,
-        .pWaitDstStageMask    = &wait_destination_stage_mask,
-        .commandBufferCount   = 1,
-        .pCommandBuffers      = &*command_buffer,
-        .signalSemaphoreCount = 1,
-        .pSignalSemaphores    = &*render_finished_semaphore,
+    vk::SemaphoreSubmitInfo present_complete_semaphore_submit_info{
+        .semaphore = *present_complete_semaphore,
+        .stageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+    };
+    vk::SemaphoreSubmitInfo render_finished_semaphore_submit_info{
+        .semaphore = *render_finished_semaphore,
+        .stageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+    };
+    vk::CommandBufferSubmitInfo command_buffer_submit_info{.commandBuffer = *command_buffer};
+    vk::SubmitInfo2 submit_info{
+        .waitSemaphoreInfoCount   = 1,
+        .pWaitSemaphoreInfos      = &present_complete_semaphore_submit_info,
+        .commandBufferInfoCount   = 1,
+        .pCommandBufferInfos      = &command_buffer_submit_info,
+        .signalSemaphoreInfoCount = 1,
+        .pSignalSemaphoreInfos    = &render_finished_semaphore_submit_info,
     };
 
-    queue.submit(submit_info, *draw_fence);
+    queue.submit2(submit_info, *draw_fence);
 
     vk::PresentInfoKHR const present_info_khr{
         .waitSemaphoreCount = 1,
