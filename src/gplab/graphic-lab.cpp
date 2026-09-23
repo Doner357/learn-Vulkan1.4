@@ -675,21 +675,32 @@ void GraphicLab::createCommandBuffer()
     vk::CommandBufferAllocateInfo alloc_info{
         .commandPool        = command_pool,
         .level              = vk::CommandBufferLevel::ePrimary,
-        .commandBufferCount = 1,
+        .commandBufferCount = kMaxFramesInFlight,
     };
 
-    command_buffer = std::move(device.allocateCommandBuffers(alloc_info).front());
+    command_buffers = device.allocateCommandBuffers(alloc_info);
 }
 
 void GraphicLab::createSyncObjects()
 {
-    present_complete_semaphore = device.createSemaphore({});
-    render_finished_semaphore  = device.createSemaphore({});
-    draw_fence                 = device.createFence({.flags = vk::FenceCreateFlagBits::eSignaled});
+    assert(present_complete_semaphores.empty() && render_finished_semaphores.empty());
+
+    for (std::size_t i = 0; i < swapchain_images.size(); ++i)
+    {
+        render_finished_semaphores.emplace_back(device, vk::SemaphoreCreateInfo{});
+    }
+
+    for (std::size_t i = 0; i < kMaxFramesInFlight; ++i)
+    {
+        present_complete_semaphores.emplace_back(device, vk::SemaphoreCreateInfo{});
+        in_flight_fences.emplace_back(device, vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled});
+    }
 }
 
 void GraphicLab::reacordCommandBuffer(std::uint32_t image_index)
 {
+    auto const& command_buffer = command_buffers[frame_index];
+
     command_buffer.begin({});
 
     transitionImageLayout(swapchain_images[image_index],
@@ -750,40 +761,46 @@ void GraphicLab::reacordCommandBuffer(std::uint32_t image_index)
 
 void GraphicLab::mainLoop()
 {
+    std::println("Start Drawing Frame...");
     while (!static_cast<bool>(glfwWindowShouldClose(window)))
     {
         glfwPollEvents();
         drawFrame();
     }
+    device.waitIdle();
 }
 
 void GraphicLab::drawFrame()
 {
-    auto fence_result =
-        device.waitForFences(*draw_fence, vk::True, std::numeric_limits<std::uint64_t>::max());
+    auto fence_result = device.waitForFences(*in_flight_fences[frame_index],
+                                             vk::True,
+                                             std::numeric_limits<std::uint64_t>::max());
 
     if (fence_result != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to wait for fence!");
     }
-    device.resetFences(*draw_fence);
+
+    device.resetFences(*in_flight_fences[frame_index]);
 
     auto [result, image_index] =
         swapchain.acquireNextImage(std::numeric_limits<std::uint64_t>::max(),
-                                   *present_complete_semaphore,
+                                   *present_complete_semaphores[frame_index],
                                    nullptr);
 
     reacordCommandBuffer(image_index);
 
     vk::SemaphoreSubmitInfo present_complete_semaphore_submit_info{
-        .semaphore = *present_complete_semaphore,
+        .semaphore = *present_complete_semaphores[frame_index],
         .stageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
     };
     vk::SemaphoreSubmitInfo render_finished_semaphore_submit_info{
-        .semaphore = *render_finished_semaphore,
+        .semaphore = *render_finished_semaphores[image_index],
         .stageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
     };
-    vk::CommandBufferSubmitInfo command_buffer_submit_info{.commandBuffer = *command_buffer};
+    vk::CommandBufferSubmitInfo command_buffer_submit_info{
+        .commandBuffer = *command_buffers[frame_index]
+    };
     vk::SubmitInfo2 submit_info{
         .waitSemaphoreInfoCount   = 1,
         .pWaitSemaphoreInfos      = &present_complete_semaphore_submit_info,
@@ -793,11 +810,11 @@ void GraphicLab::drawFrame()
         .pSignalSemaphoreInfos    = &render_finished_semaphore_submit_info,
     };
 
-    queue.submit2(submit_info, *draw_fence);
+    queue.submit2(submit_info, *in_flight_fences[frame_index]);
 
     vk::PresentInfoKHR const present_info_khr{
         .waitSemaphoreCount = 1,
-        .pWaitSemaphores    = &*render_finished_semaphore,
+        .pWaitSemaphores    = &*render_finished_semaphores[image_index],
         .swapchainCount     = 1,
         .pSwapchains        = &*swapchain,
         .pImageIndices      = &image_index,
@@ -805,7 +822,7 @@ void GraphicLab::drawFrame()
 
     result = queue.presentKHR(present_info_khr);
 
-    device.waitIdle();
+    frame_index = (frame_index + 1) % kMaxFramesInFlight;
 }
 
 void GraphicLab::run()

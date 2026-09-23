@@ -26,6 +26,8 @@ constexpr bool kEnableValidationLayers = false;
 constexpr bool kEnableValidationLayers = true;
 #endif // NDEBUG
 
+constexpr std::size_t kMaxFramesInFlight = 2;
+
 /*
  * Main Vulkan Lab class define as singleton
  */
@@ -71,11 +73,13 @@ class GraphicLab
         vk::raii::Pipeline graphics_pipeline     = nullptr;
         // Command Buffer
         vk::raii::CommandPool command_pool     = nullptr;
-        vk::raii::CommandBuffer command_buffer = nullptr;
+        std::vector<vk::raii::CommandBuffer> command_buffers;
         // Synchronization
-        vk::raii::Semaphore present_complete_semaphore = nullptr;
-        vk::raii::Semaphore render_finished_semaphore  = nullptr;
-        vk::raii::Fence draw_fence                     = nullptr;
+        std::vector<vk::raii::Semaphore> present_complete_semaphores;
+        std::vector<vk::raii::Semaphore> render_finished_semaphores;
+        std::vector<vk::raii::Fence> in_flight_fences;
+        // Frame in flight data
+        std::uint32_t frame_index = 0;
 
         GraphicLab() = default;
 
